@@ -1,0 +1,93 @@
+---
+title: "Untitled"
+author: "Juliano Palacios-Abrantes"
+date: '2022-05-03'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(MyFunctions)
+
+
+pckgs <- c("tidyverse","Rcoru")
+
+my_lib(pckgs)
+
+```
+
+## Get environemtal data
+
+```{r get_environ_data}
+
+# Bounding box from Fabio
+
+xmin <- -150
+xmax <- -85
+ymin <- -10
+ymax <- 30
+
+
+# DBEM coordinate system
+dbem_coords <- my_path("Spa", "DBEM", name = "Lon_Lat_DBEM.txt", read = T, header = T)
+
+mcgover_grid <- dbem_coords %>% 
+  filter(
+    lat >= ymin, lat <= ymax,
+    lon >= xmin & lon <= xmax
+  ) 
+
+
+write_csv(mcgover_grid, "../Results/mcgovern_grid.csv")
+
+
+
+# Function to write data on folder
+get_data <- function(variable){
+
+# Get environment data (Rcoru)
+x <- read_clim(cmip = 6,
+          esm = "GFDL",
+          rcp = "26",
+          variable = variable,
+          years = seq(1951,2100,1),
+          root_path = "/Volumes",
+          box = c(ymin,ymax,xmin,xmax),
+          coords = dbem_coords) %>% 
+  gather("year","value",`1951`:`2100`) %>% 
+  filter(value != -9999) # remove land
+
+# Save file
+file_name <- paste0(my_path("D","GFDL26"),variable,".csv")
+write_csv(x, file_name)
+
+}
+
+
+# Run function for all variables
+
+vars <- read_clim(variable = "options")[-6] # no need for Ice extenet down in Mexicoooooo
+
+lapply(vars,get_data)
+```
+
+### Test data
+
+```{r}
+
+read_csv("/Volumes/DATA/JULIANO_NEYMAR/mcgovern/Data/GFDL85/O2_surf.csv") %>%  
+  filter(year == 2020) %>% 
+  ggplot() +
+  geom_tile(
+    aes(
+      x = lon,
+      y = lat,
+      fill = value
+    )
+  )
+
+
+```
+
+

@@ -1,0 +1,173 @@
+---
+title: "Untitled"
+output: html_document
+date: '2022-07-12'
+---
+
+This script converts the monthly nc4 data from ISIMIP levante.dkrz.de server to csv files for mexico
+
+
+```{r}
+# Read libraries
+pckg <- c("ncdf4","tidyverse","data.table") # load these packages
+
+MyFunctions::my_lib(pckg)
+```
+
+# Testing monthly data
+
+## Load data
+
+```{r}
+
+# Load nc test file
+test <- nc_open("../../../gfdl-esm4_r1i1p1f1_ssp585_tos_onedeg_global_monthly_2015_2100.nc")
+
+
+
+```
+
+
+## Testing data
+```{r}
+
+# Extract data variables
+lon <- ncvar_get(test,"lon") # in 1 x 1
+lat <- ncvar_get(test,"lat") # in 1 x 1
+
+# Deal with time variables
+# months since 1601-1-1 00:00:00
+time <- ncvar_get(test,"time") # in days 
+
+# estimate months between 1601 and 2015
+months <- interval(mdy(01011601), mdy(12312014)) %/% months(1)
+
+# Create a grid of variables
+grid <- expand.grid("lon" = lon,"lat" = lat, "time" = time) %>% 
+  # filter(lon == -179.5, lat == 89.5) %>%
+  mutate(month = (time-months),
+         year = cut(month, breaks=seq(0,1032,12),
+                    labels = F),
+         yr = 2014+year 
+  )
+
+# Convert to df for ease manual work
+df <- data.frame(cbind(grid, "sst" = as.vector(test_data))) %>% 
+  group_by(yr,lat,lon) %>% 
+  summarise(mean_sst = mean(sst,na.rm=T))
+
+# Mexico coords
+xmin <- -120
+xmax <- -85
+ymin <- 14
+ymax <- 30
+
+
+mex <- df %>% 
+  filter(lat >= ymin, lat <= ymax) %>% 
+  filter(lon >= xmin, lon <= xmax,
+         yr %in% c(2015,2100),
+         !is.na(mean_sst))
+
+
+
+
+ggplot(data = mex) +
+  geom_tile(
+    aes(
+      x = lon,
+      y = lat,
+      fill = mean_sst,
+      color = mean_sst
+    )
+  ) +
+  geom_sf(data = spData::world, fill = "grey80", col = "black")+
+  coord_sf(xlim = c(-118, xmax), ylim = c(ymin, ymax)) +
+  viridis::scale_fill_viridis() +
+  viridis::scale_color_viridis() +
+  facet_wrap(~yr)
+
+
+```
+
+
+
+# The Actual extraction
+
+## Function to extract data
+
+```{r monthly_data_fun}
+
+
+get_month_data <- function(in_path,out_path,file, n_months){
+  
+  # get variables from file name
+  esm <- substr(file, 1, 4)
+  ssp <- substr(file, 20, 25)
+  var <- substr(file, 27, 29)
+  year_zero <- ifelse(substr(file, 58,61) == "2100",2014,1950)
+  
+  # Load data
+  file_path <- paste0(in_path,file)
+  ncfile <- nc_open(file_path)
+  
+  # Extract data variables
+  lon <- ncvar_get(ncfile,"lon") # in 1 x 1
+  lat <- ncvar_get(ncfile,"lat") # in 1 x 1
+  
+  # Deal with time variables
+  # months since 1601-1-1 00:00:00
+  time <- ncvar_get(ncfile,"time") # in days 
+  
+  # Expand grid of variables
+  grid <- expand.grid("lon" = lon,"lat" = lat, "time" = time) %>% 
+    # filter(lon == -179.5, lat == 89.5) %>%
+    mutate(month_n = (time-n_months),
+           month = cut(month_n, breaks=seq(0,length(time),12),
+                       labels = F),
+           year = year_zero+month 
+    )
+  
+  # variable
+  variable_data <- ncvar_get(ncfile,var) # in days 
+  
+  
+  
+  # Convert to df for ease manual work
+  df_out <- tibble(cbind(grid, "var" = as.vector(variable_data))) %>% 
+    dplyr::select(var,month,year,lat,lon) %>% 
+    filter(lat >= 14, lat <= 30) %>% 
+    filter(lon >= -150, lon <= -85) %>% 
+    mutate(
+      esm = esm,
+      ssp = ssp
+    )
+  colnames(df_out)[1] <- var
+  
+  
+  name <- paste(out_path,var,esm,ssp,"monthly.csv", sep ="_")
+  
+  write.csv(df_out,name,row.names = FALSE)
+  
+}
+
+
+```
+
+## Control pannel
+
+```{r}
+
+
+# estimate months between 1601 and 2015
+n_months <- interval(mdy(01011601), mdy(12312014)) %/% months(1)
+
+file <- "gfdl-esm4_r1i1p1f1_ssp585_tos_onedeg_global_monthly_2015_2100.nc"
+
+get_month_data(in_path = "~/",
+               out_path = "~/",
+               file = file,
+               n_months = n_months)
+
+```
+
